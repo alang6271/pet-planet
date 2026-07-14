@@ -10,8 +10,9 @@ import type { Memory, ApiResponse } from '../../shared/types.js'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production'
 const projectRoot = path.join(__dirname, '..', '..')
-const uploadsRoot = path.join(projectRoot, 'uploads')
+const uploadsRoot = isVercel ? '/tmp/uploads' : path.join(projectRoot, 'uploads')
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {

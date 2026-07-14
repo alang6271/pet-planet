@@ -6,12 +6,12 @@ import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-// Project root: api/db/ -> api/ -> root
-const projectRoot = path.join(__dirname, '..', '..')
-const dataDir = path.join(projectRoot, 'data')
-const uploadsDir = path.join(projectRoot, 'uploads')
+const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production'
 
-// Ensure directories exist
+const projectRoot = path.join(__dirname, '..', '..')
+const dataDir = isVercel ? '/tmp' : path.join(projectRoot, 'data')
+const uploadsDir = isVercel ? '/tmp/uploads' : path.join(projectRoot, 'uploads')
+
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true })
 }
