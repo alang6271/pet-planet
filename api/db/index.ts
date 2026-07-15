@@ -60,4 +60,10 @@ async function initDB(): Promise<void> {
       )`,
     },
   ])
+  try {
+    await db.execute('ALTER TABLE memories ADD CONSTRAINT fk_memories_pet_id FOREIGN KEY (pet_id) REFERENCES pets(id) ON DELETE CASCADE')
+  } catch {}
+  try {
+    await db.execute('ALTER TABLE candles ADD CONSTRAINT fk_candles_pet_id FOREIGN KEY (pet_id) REFERENCES pets(id) ON DELETE CASCADE')
+  } catch {}
 }
