@@ -5,7 +5,7 @@ export interface Pet {
   species: string;
   birth_date: string | null;
   death_date: string | null;
-  avatar_path: string | null;
+  avatar_base64: string | null;
   epitaph: string | null;
   planet_config: PlanetConfig;
   created_at: string;

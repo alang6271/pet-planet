@@ -1,44 +1,16 @@
-import { Router, type Request, type Response, type NextFunction } from 'express'
+import { Router, type Request, type Response } from 'express'
 import multer from 'multer'
-import path from 'path'
-import fs from 'fs'
 import { randomUUID } from 'crypto'
-import { fileURLToPath } from 'url'
 import { db, ensureDB } from '../db/index.js'
 import type { Memory, ApiResponse } from '../../shared/types.js'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production'
-const projectRoot = path.join(__dirname, '..', '..')
-const uploadsRoot = isVercel ? '/tmp/uploads' : path.join(projectRoot, 'uploads')
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const petId = (req as any).memoryPetId
-    if (!petId) {
-      cb(new Error('Memory not found'), '')
-      return
-    }
-    const dir = path.join(uploadsRoot, 'pets', petId, 'memories')
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
-    }
-    cb(null, dir)
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname)
-    const base = path.basename(file.originalname, ext)
-    cb(null, `${Date.now()}-${base}${ext}`)
-  },
-})
+const storage = multer.memoryStorage()
 
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
     const allowed = /jpeg|jpg|png|gif|webp/i
-    const extname = allowed.test(path.extname(file.originalname).toLowerCase())
+    const extname = allowed.test(file.originalname.toLowerCase())
     const mimetype = allowed.test(file.mimetype)
     if (extname && mimetype) {
       cb(null, true)
@@ -46,7 +18,7 @@ const upload = multer({
       cb(new Error('Only image files (jpeg, png, gif, webp) are allowed'))
     }
   },
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 },
 })
 
 const router = Router()
@@ -60,25 +32,6 @@ function parseMemory(row: any): Memory {
     memory_date: row.memory_date ?? '',
     category: row.category ?? 'daily',
     created_at: row.created_at,
-  }
-}
-
-// 上传前中间件：异步查询 memory 的 pet_id，供 multer diskStorage 使用
-async function lookupMemoryPet(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    await ensureDB()
-    const result = await db.execute({
-      sql: 'SELECT pet_id FROM memories WHERE id = ?',
-      args: [req.params.id],
-    })
-    if (result.rows.length === 0) {
-      res.status(404).json({ success: false, error: 'Memory not found' })
-      return
-    }
-    ;(req as any).memoryPetId = result.rows[0].pet_id
-    next()
-  } catch (err) {
-    res.status(500).json({ success: false, error: (err as Error).message })
   }
 }
 
@@ -183,7 +136,7 @@ router.delete('/memories/:id', async (req: Request, res: Response): Promise<void
 })
 
 // POST /api/memories/:id/upload - 上传记忆照片
-router.post('/memories/:id/upload', lookupMemoryPet, upload.array('images', 10), async (req: Request, res: Response): Promise<void> => {
+router.post('/memories/:id/upload', upload.array('images', 10), async (req: Request, res: Response): Promise<void> => {
   try {
     await ensureDB()
     const files = req.files as Express.Multer.File[]
@@ -200,11 +153,11 @@ router.post('/memories/:id/upload', lookupMemoryPet, upload.array('images', 10),
       return
     }
     const existing = existingResult.rows[0] as any
-    const newPaths = files.map(
-      (f) => `/uploads/pets/${existing.pet_id}/memories/${f.filename}`,
+    const newBase64s = files.map(
+      (f) => `data:${f.mimetype};base64,${f.buffer.toString('base64')}`,
     )
     const existingPaths: string[] = JSON.parse(existing.image_paths ?? '[]')
-    const updatedPaths = [...existingPaths, ...newPaths]
+    const updatedPaths = [...existingPaths, ...newBase64s]
     await db.execute({
       sql: 'UPDATE memories SET image_paths = ? WHERE id = ?',
       args: [JSON.stringify(updatedPaths), req.params.id],

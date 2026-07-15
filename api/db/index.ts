@@ -30,7 +30,7 @@ async function initDB(): Promise<void> {
         species TEXT DEFAULT '',
         birth_date TEXT,
         death_date TEXT,
-        avatar_path TEXT,
+        avatar_base64 TEXT,
         epitaph TEXT,
         planet_config TEXT DEFAULT '{"color":"#ffcba0","texture":"smooth","hasRing":false,"decoration":"none"}',
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
