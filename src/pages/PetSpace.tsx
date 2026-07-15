@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   Plus,
@@ -10,6 +10,7 @@ import {
   Image,
   Flame,
   Globe,
+  Trash2,
 } from "lucide-react";
 import StarField from "@/components/StarField";
 import MiniPlanetView from "@/three/MiniPlanetView";
@@ -17,7 +18,7 @@ import MemoryTimeline from "@/components/MemoryTimeline";
 import AddMemoryModal from "@/components/AddMemoryModal";
 import CandleWall from "@/components/CandleWall";
 import CountUp from "@/components/CountUp";
-import { getPet } from "@/api/pets";
+import { getPet, deletePet } from "@/api/pets";
 import { getMemories, deleteMemory } from "@/api/memories";
 import { getCandles } from "@/api/candles";
 import type { Pet, Memory, Candle } from "../../shared/types";
@@ -56,12 +57,16 @@ function computeCompanionDays(
  */
 export default function PetSpace() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [pet, setPet] = useState<Pet | null>(null);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [memoryModalOpen, setMemoryModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("memories");
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [indicatorStyle, setIndicatorStyle] = useState<{
@@ -124,6 +129,25 @@ export default function PetSpace() {
   // 点亮蜡烛
   const handleCandleLit = (candle: Candle) => {
     setCandles((prev) => [candle, ...prev]);
+  };
+
+  // 删除星球
+  const handleDelete = async () => {
+    if (!pet || deleteConfirmText !== pet.name) return;
+    setDeleting(true);
+    try {
+      await deletePet(pet.id);
+      navigate("/planets");
+    } catch (err) {
+      setError((err as Error).message);
+      setDeleting(false);
+      setDeleteModalOpen(false);
+    }
+  };
+
+  const openDeleteModal = () => {
+    setDeleteConfirmText("");
+    setDeleteModalOpen(true);
   };
 
   // 加载中
@@ -218,9 +242,14 @@ export default function PetSpace() {
             <ArrowLeft className="w-4 h-4" />
             <span>返回</span>
           </Link>
-          <div className="pointer-events-auto flex items-center gap-1.5 text-xs text-ink-muted px-3 py-1.5 rounded-full bg-white/5 backdrop-blur-md border border-white/10">
-            <span>🪐</span>
-            <span>宠物星球</span>
+          <div className="pointer-events-auto flex items-center gap-2">
+            <button
+              onClick={openDeleteModal}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 backdrop-blur-md border border-white/10 text-rose-400/80 hover:text-rose-300 hover:bg-rose-500/10 hover:border-rose-500/30 transition-all text-sm"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">删除星球</span>
+            </button>
           </div>
         </div>
 
@@ -469,6 +498,65 @@ export default function PetSpace() {
           onClose={() => setMemoryModalOpen(false)}
           onCreated={handleMemoryCreated}
         />
+
+        {/* 删除星球确认弹窗 */}
+        {deleteModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center px-4"
+            onClick={() => !deleting && setDeleteModalOpen(false)}
+          >
+            <div className="absolute inset-0 bg-space-deepest/80 backdrop-blur-sm animate-modal-overlay-in" />
+            <div
+              className="relative w-full max-w-md rounded-3xl border border-rose-500/20 bg-space-dark p-8 text-center animate-modal-zoom-in"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-rose-500/10 flex items-center justify-center">
+                <Trash2 className="w-8 h-8 text-rose-400" />
+              </div>
+              <h3 className="font-serif text-2xl text-ink-primary mb-3">
+                确定要让这颗星熄灭吗？
+              </h3>
+              <p className="text-sm text-ink-secondary mb-2">
+                删除后，TA 的所有记忆、蜡烛都将一起消散
+              </p>
+              <p className="text-sm text-rose-400/80 mb-6">
+                此操作无法撤销
+              </p>
+
+              <div className="mb-6 text-left">
+                <label className="block text-xs text-ink-muted mb-2">
+                  请输入 <span className="text-rose-400 font-medium">{pet.name}</span> 以确认删除
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-space-mid border border-white/10 text-ink-primary placeholder-ink-muted focus:outline-none focus:border-rose-500/50 transition-colors text-center font-serif text-lg"
+                  placeholder={pet.name}
+                  disabled={deleting}
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeleteModalOpen(false)}
+                  disabled={deleting}
+                  className="btn-capsule border border-white/10 text-ink-secondary hover:bg-white/5 flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  再想想
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting || deleteConfirmText !== pet.name}
+                  className="btn-capsule bg-gradient-to-r from-rose-500 to-rose-400 hover:from-rose-400 hover:to-rose-500 text-white font-semibold flex-1 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {deleting ? "正在删除..." : "确认删除"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
