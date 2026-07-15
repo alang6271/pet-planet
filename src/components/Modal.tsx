@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 interface ModalProps {
   open: boolean;
@@ -10,17 +10,31 @@ interface ModalProps {
 export default function Modal({ open, onClose, children, className = "" }: ModalProps) {
   const [isClosing, setIsClosing] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (open) {
       setShowModal(true);
       setIsClosing(false);
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
     } else if (showModal && !isClosing) {
       setIsClosing(true);
-      const timer = setTimeout(() => setShowModal(false), 300);
-      return () => clearTimeout(timer);
+      closeTimerRef.current = setTimeout(() => {
+        setShowModal(false);
+        closeTimerRef.current = null;
+      }, 300);
     }
   }, [open, showModal, isClosing]);
+
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
 
   const handleClose = useCallback(() => {
     setIsClosing(true);

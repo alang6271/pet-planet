@@ -131,6 +131,11 @@ export default function PetSpace() {
     setCandles((prev) => [candle, ...prev]);
   };
 
+  // 熄灭蜡烛（删除）
+  const handleCandleDelete = (candleId: string) => {
+    setCandles((prev) => prev.filter((c) => c.id !== candleId));
+  };
+
   // 删除星球
   const handleDelete = async () => {
     if (!pet || deleteConfirmText !== pet.name) return;
@@ -421,6 +426,7 @@ export default function PetSpace() {
               petId={pet.id}
               candles={candles}
               onLit={handleCandleLit}
+              onDelete={handleCandleDelete}
             />
           )}
 

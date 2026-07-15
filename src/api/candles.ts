@@ -32,3 +32,16 @@ export async function lightCandle(
   }
   return json.data;
 }
+
+/**
+ * 熄灭一支蜡烛（删除）
+ */
+export async function deleteCandle(candleId: string): Promise<void> {
+  const res = await fetch(`${BASE}/candles/${candleId}`, {
+    method: "DELETE",
+  });
+  const json: ApiResponse<null> = await res.json();
+  if (!json.success) {
+    throw new Error(json.error || "熄灭失败");
+  }
+}

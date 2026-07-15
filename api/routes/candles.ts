@@ -47,4 +47,21 @@ router.post('/pets/:petId/candles', async (req: Request, res: Response): Promise
   }
 })
 
+// DELETE /api/candles/:candleId - 熄灭一支蜡烛（删除）
+router.delete('/candles/:candleId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    await ensureDB()
+    const { candleId } = req.params
+    const result = await db.execute({ sql: 'SELECT id FROM candles WHERE id = ?', args: [candleId] })
+    if (result.rows.length === 0) {
+      res.status(404).json({ success: false, error: 'Candle not found' })
+      return
+    }
+    await db.execute({ sql: 'DELETE FROM candles WHERE id = ?', args: [candleId] })
+    res.json({ success: true, data: null })
+  } catch (err) {
+    res.status(500).json({ success: false, error: (err as Error).message })
+  }
+})
+
 export default router

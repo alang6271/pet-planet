@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Flame, X, Loader2, Heart } from "lucide-react";
-import { lightCandle } from "@/api/candles";
+import { Flame, X, Loader2, Heart, Wind } from "lucide-react";
+import { lightCandle, deleteCandle } from "@/api/candles";
 import type { Candle } from "../../shared/types";
 import Modal from "./Modal";
 
@@ -8,6 +8,7 @@ interface CandleWallProps {
   petId: string;
   candles: Candle[];
   onLit: (candle: Candle) => void;
+  onDelete?: (candleId: string) => void;
 }
 
 function formatTime(dateStr: string): string {
@@ -68,6 +69,7 @@ export default function CandleWall({
   petId,
   candles,
   onLit,
+  onDelete,
 }: CandleWallProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -76,6 +78,8 @@ export default function CandleWall({
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleLight = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,7 +110,30 @@ export default function CandleWall({
 
   const openDetail = (candle: Candle) => {
     setSelectedCandle(candle);
+    setConfirmDelete(false);
+    setError("");
     setDetailOpen(true);
+  };
+
+  const closeDetail = () => {
+    setDetailOpen(false);
+    setConfirmDelete(false);
+    setError("");
+  };
+
+  // 熄灭蜡烛（删除）
+  const handleDelete = async () => {
+    if (!selectedCandle) return;
+    setDeleting(true);
+    try {
+      await deleteCandle(selectedCandle.id);
+      onDelete?.(selectedCandle.id);
+      closeDetail();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -276,13 +303,14 @@ export default function CandleWall({
       </Modal>
 
       {/* 蜡烛详情模态框 */}
-      <Modal open={detailOpen && !!selectedCandle} onClose={() => setDetailOpen(false)}>
+      {selectedCandle && (
+      <Modal open={detailOpen} onClose={closeDetail}>
         <div className="relative w-full max-w-sm rounded-3xl border border-amber-500/10 bg-gradient-to-b from-space-dark to-space-deepest overflow-hidden">
             <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-48 h-48 rounded-full bg-amber-400/15 blur-3xl" />
             <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-64 h-40 rounded-full bg-orange-500/5 blur-3xl" />
 
             <button
-              onClick={() => setDetailOpen(false)}
+              onClick={closeDetail}
               className="absolute top-5 right-5 z-10 w-9 h-9 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-ink-muted hover:text-ink-primary transition-all"
               aria-label="关闭"
             >
@@ -325,9 +353,56 @@ export default function CandleWall({
                 <Heart className="w-4 h-4 text-rose-400/60" />
                 <span>愿这束光，照亮 TA 的归途</span>
               </div>
+
+              {/* 熄灭蜡烛入口：低调、温柔，避免突兀 */}
+              <div className="mt-6 pt-5 border-t border-white/[0.05]">
+                {!confirmDelete ? (
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="inline-flex items-center gap-1.5 text-[11px] text-ink-muted/50 hover:text-amber-400/70 transition-colors duration-300"
+                  >
+                    <Wind className="w-3 h-3" />
+                    <span>熄灭这支蜡烛</span>
+                  </button>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-ink-secondary italic">
+                      愿这束光化作星辰？
+                    </p>
+                    {error && (
+                      <p className="text-xs text-rose-400/80">{error}</p>
+                    )}
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={() => {
+                          setConfirmDelete(false);
+                          setError("");
+                        }}
+                        disabled={deleting}
+                        className="px-3 py-1.5 rounded-full text-xs text-ink-muted hover:text-ink-secondary border border-white/10 hover:border-white/20 transition-all disabled:opacity-50"
+                      >
+                        留下
+                      </button>
+                      <button
+                        onClick={handleDelete}
+                        disabled={deleting}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border border-amber-500/30 text-amber-400/80 hover:bg-amber-500/10 hover:border-amber-500/50 transition-all disabled:opacity-50"
+                      >
+                        {deleting ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Wind className="w-3 h-3" />
+                        )}
+                        {deleting ? "熄灭中..." : "熄灭"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
         </div>
       </Modal>
+      )}
     </div>
   );
 }
