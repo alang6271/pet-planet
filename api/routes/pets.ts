@@ -4,7 +4,7 @@ import path from 'path'
 import fs from 'fs'
 import { randomUUID } from 'crypto'
 import { fileURLToPath } from 'url'
-import db from '../db/index.js'
+import { db, ensureDB } from '../db/index.js'
 import type { Pet, PlanetConfig, ApiResponse } from '../../shared/types.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -67,10 +67,11 @@ function parsePet(row: any): Pet {
 }
 
 // GET /api/pets - 获取所有宠物列表
-router.get('/', (req: Request, res: Response): void => {
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const rows = db.prepare('SELECT * FROM pets ORDER BY created_at DESC').all()
-    const pets = rows.map(parsePet)
+    await ensureDB()
+    const result = await db.execute('SELECT * FROM pets ORDER BY created_at DESC')
+    const pets = result.rows.map(parsePet)
     const response: ApiResponse<Pet[]> = { success: true, data: pets }
     res.json(response)
   } catch (err) {
@@ -79,14 +80,15 @@ router.get('/', (req: Request, res: Response): void => {
 })
 
 // GET /api/pets/:id - 获取单个宠物详情
-router.get('/:id', (req: Request, res: Response): void => {
+router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const row = db.prepare('SELECT * FROM pets WHERE id = ?').get(req.params.id)
-    if (!row) {
+    await ensureDB()
+    const result = await db.execute({ sql: 'SELECT * FROM pets WHERE id = ?', args: [req.params.id] })
+    if (result.rows.length === 0) {
       res.status(404).json({ success: false, error: 'Pet not found' })
       return
     }
-    const response: ApiResponse<Pet> = { success: true, data: parsePet(row) }
+    const response: ApiResponse<Pet> = { success: true, data: parsePet(result.rows[0]) }
     res.json(response)
   } catch (err) {
     res.status(500).json({ success: false, error: (err as Error).message })
@@ -94,8 +96,9 @@ router.get('/:id', (req: Request, res: Response): void => {
 })
 
 // POST /api/pets - 创建新宠物
-router.post('/', (req: Request, res: Response): void => {
+router.post('/', async (req: Request, res: Response): Promise<void> => {
   try {
+    await ensureDB()
     const { name, species, birth_date, death_date, epitaph, planet_config } = req.body
     if (!name) {
       res.status(400).json({ success: false, error: 'Name is required' })
@@ -108,21 +111,22 @@ router.post('/', (req: Request, res: Response): void => {
       hasRing: false,
       decoration: 'none',
     }
-    db.prepare(
-      `INSERT INTO pets (id, name, species, birth_date, death_date, epitaph, planet_config)
+    await db.execute({
+      sql: `INSERT INTO pets (id, name, species, birth_date, death_date, epitaph, planet_config)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      id,
-      name,
-      species ?? '',
-      birth_date ?? null,
-      death_date ?? null,
-      epitaph ?? null,
-      JSON.stringify(config),
-    )
+      args: [
+        id,
+        name,
+        species ?? '',
+        birth_date ?? null,
+        death_date ?? null,
+        epitaph ?? null,
+        JSON.stringify(config),
+      ],
+    })
 
-    const row = db.prepare('SELECT * FROM pets WHERE id = ?').get(id)
-    const response: ApiResponse<Pet> = { success: true, data: parsePet(row) }
+    const result = await db.execute({ sql: 'SELECT * FROM pets WHERE id = ?', args: [id] })
+    const response: ApiResponse<Pet> = { success: true, data: parsePet(result.rows[0]) }
     res.status(201).json(response)
   } catch (err) {
     res.status(500).json({ success: false, error: (err as Error).message })
@@ -130,33 +134,36 @@ router.post('/', (req: Request, res: Response): void => {
 })
 
 // PUT /api/pets/:id - 更新宠物信息
-router.put('/:id', (req: Request, res: Response): void => {
+router.put('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
+    await ensureDB()
     const { name, species, birth_date, death_date, epitaph, planet_config, avatar_path } = req.body
-    const existing = db.prepare('SELECT * FROM pets WHERE id = ?').get(req.params.id) as any
-    if (!existing) {
+    const existingResult = await db.execute({ sql: 'SELECT * FROM pets WHERE id = ?', args: [req.params.id] })
+    if (existingResult.rows.length === 0) {
       res.status(404).json({ success: false, error: 'Pet not found' })
       return
     }
+    const existing = existingResult.rows[0] as any
     const config =
       planet_config !== undefined ? JSON.stringify(planet_config) : existing.planet_config
-    db.prepare(
-      `UPDATE pets
+    await db.execute({
+      sql: `UPDATE pets
        SET name = ?, species = ?, birth_date = ?, death_date = ?, epitaph = ?, planet_config = ?, avatar_path = ?, updated_at = datetime('now')
        WHERE id = ?`,
-    ).run(
-      name ?? existing.name,
-      species ?? existing.species,
-      birth_date ?? existing.birth_date,
-      death_date ?? existing.death_date,
-      epitaph ?? existing.epitaph,
-      config,
-      avatar_path ?? existing.avatar_path,
-      req.params.id,
-    )
+      args: [
+        name ?? existing.name,
+        species ?? existing.species,
+        birth_date ?? existing.birth_date,
+        death_date ?? existing.death_date,
+        epitaph ?? existing.epitaph,
+        config,
+        avatar_path ?? existing.avatar_path,
+        req.params.id,
+      ],
+    })
 
-    const row = db.prepare('SELECT * FROM pets WHERE id = ?').get(req.params.id)
-    const response: ApiResponse<Pet> = { success: true, data: parsePet(row) }
+    const result = await db.execute({ sql: 'SELECT * FROM pets WHERE id = ?', args: [req.params.id] })
+    const response: ApiResponse<Pet> = { success: true, data: parsePet(result.rows[0]) }
     res.json(response)
   } catch (err) {
     res.status(500).json({ success: false, error: (err as Error).message })
@@ -164,10 +171,11 @@ router.put('/:id', (req: Request, res: Response): void => {
 })
 
 // DELETE /api/pets/:id - 删除宠物
-router.delete('/:id', (req: Request, res: Response): void => {
+router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = db.prepare('DELETE FROM pets WHERE id = ?').run(req.params.id)
-    if (result.changes === 0) {
+    await ensureDB()
+    const result = await db.execute({ sql: 'DELETE FROM pets WHERE id = ?', args: [req.params.id] })
+    if (result.rowsAffected === 0) {
       res.status(404).json({ success: false, error: 'Pet not found' })
       return
     }
@@ -179,22 +187,23 @@ router.delete('/:id', (req: Request, res: Response): void => {
 })
 
 // POST /api/pets/:id/avatar - 上传宠物头像
-router.post('/:id/avatar', upload.single('avatar'), (req: Request, res: Response): void => {
+router.post('/:id/avatar', upload.single('avatar'), async (req: Request, res: Response): Promise<void> => {
   try {
+    await ensureDB()
     if (!req.file) {
       res.status(400).json({ success: false, error: 'No file uploaded' })
       return
     }
-    const existing = db.prepare('SELECT id FROM pets WHERE id = ?').get(req.params.id)
-    if (!existing) {
+    const existingResult = await db.execute({ sql: 'SELECT id FROM pets WHERE id = ?', args: [req.params.id] })
+    if (existingResult.rows.length === 0) {
       res.status(404).json({ success: false, error: 'Pet not found' })
       return
     }
     const relativePath = `/uploads/pets/${req.params.id}/${req.file.filename}`
-    db.prepare("UPDATE pets SET avatar_path = ?, updated_at = datetime('now') WHERE id = ?").run(
-      relativePath,
-      req.params.id,
-    )
+    await db.execute({
+      sql: "UPDATE pets SET avatar_path = ?, updated_at = datetime('now') WHERE id = ?",
+      args: [relativePath, req.params.id],
+    })
     const response: ApiResponse<{ avatar_path: string }> = {
       success: true,
       data: { avatar_path: relativePath },

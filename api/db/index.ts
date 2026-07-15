@@ -1,65 +1,63 @@
-import Database from 'better-sqlite3'
-import path from 'path'
-import fs from 'fs'
-import { fileURLToPath } from 'url'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+import { createClient, type Client } from '@libsql/client'
 
 const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production'
 
-const projectRoot = path.join(__dirname, '..', '..')
-const dataDir = isVercel ? '/tmp' : path.join(projectRoot, 'data')
-const uploadsDir = isVercel ? '/tmp/uploads' : path.join(projectRoot, 'uploads')
+// 生产环境使用 Turso 云数据库，本地开发使用本地文件
+const dbUrl = isVercel
+  ? process.env.TURSO_DATABASE_URL!
+  : 'file:./data/pet-planet.db'
 
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true })
+const authToken = isVercel ? process.env.TURSO_AUTH_TOKEN : undefined
+
+export const db: Client = createClient({ url: dbUrl, authToken })
+
+// 懒加载初始化：确保表在首次查询前创建好
+let initPromise: Promise<void> | null = null
+
+export function ensureDB(): Promise<void> {
+  if (!initPromise) {
+    initPromise = initDB()
+  }
+  return initPromise
 }
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true })
+
+async function initDB(): Promise<void> {
+  await db.batch([
+    {
+      sql: `CREATE TABLE IF NOT EXISTS pets (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        species TEXT DEFAULT '',
+        birth_date TEXT,
+        death_date TEXT,
+        avatar_path TEXT,
+        epitaph TEXT,
+        planet_config TEXT DEFAULT '{"color":"#ffcba0","texture":"smooth","hasRing":false,"decoration":"none"}',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS memories (
+        id TEXT PRIMARY KEY,
+        pet_id TEXT NOT NULL,
+        content TEXT DEFAULT '',
+        image_paths TEXT DEFAULT '[]',
+        memory_date TEXT,
+        category TEXT DEFAULT 'daily',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (pet_id) REFERENCES pets(id) ON DELETE CASCADE
+      )`,
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS candles (
+        id TEXT PRIMARY KEY,
+        pet_id TEXT NOT NULL,
+        lighter_name TEXT,
+        message TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (pet_id) REFERENCES pets(id) ON DELETE CASCADE
+      )`,
+    },
+  ])
 }
-
-const dbPath = path.join(dataDir, 'pet-planet.db')
-const db = new Database(dbPath)
-
-// Enable WAL mode and foreign keys
-db.pragma('journal_mode = WAL')
-db.pragma('foreign_keys = ON')
-
-// Create tables on module load
-db.exec(`
-  CREATE TABLE IF NOT EXISTS pets (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    species TEXT DEFAULT '',
-    birth_date TEXT,
-    death_date TEXT,
-    avatar_path TEXT,
-    epitaph TEXT,
-    planet_config TEXT DEFAULT '{"color":"#ffcba0","texture":"smooth","hasRing":false,"decoration":"none"}',
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS memories (
-    id TEXT PRIMARY KEY,
-    pet_id TEXT NOT NULL,
-    content TEXT DEFAULT '',
-    image_paths TEXT DEFAULT '[]',
-    memory_date TEXT,
-    category TEXT DEFAULT 'daily',
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (pet_id) REFERENCES pets(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS candles (
-    id TEXT PRIMARY KEY,
-    pet_id TEXT NOT NULL,
-    lighter_name TEXT,
-    message TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (pet_id) REFERENCES pets(id) ON DELETE CASCADE
-  );
-`)
-
-export default db

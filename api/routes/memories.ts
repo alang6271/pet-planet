@@ -1,10 +1,10 @@
-import { Router, type Request, type Response } from 'express'
+import { Router, type Request, type Response, type NextFunction } from 'express'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { randomUUID } from 'crypto'
 import { fileURLToPath } from 'url'
-import db from '../db/index.js'
+import { db, ensureDB } from '../db/index.js'
 import type { Memory, ApiResponse } from '../../shared/types.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -16,19 +16,12 @@ const uploadsRoot = isVercel ? '/tmp/uploads' : path.join(projectRoot, 'uploads'
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const memoryId = req.params.id
-    if (!memoryId) {
-      cb(new Error('Memory ID is required'), '')
-      return
-    }
-    const memory = db.prepare('SELECT pet_id FROM memories WHERE id = ?').get(memoryId) as
-      | { pet_id: string }
-      | undefined
-    if (!memory) {
+    const petId = (req as any).memoryPetId
+    if (!petId) {
       cb(new Error('Memory not found'), '')
       return
     }
-    const dir = path.join(uploadsRoot, 'pets', memory.pet_id, 'memories')
+    const dir = path.join(uploadsRoot, 'pets', petId, 'memories')
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true })
     }
@@ -70,13 +63,34 @@ function parseMemory(row: any): Memory {
   }
 }
 
-// GET /api/pets/:petId/memories - 获取某宠物的所有记忆
-router.get('/pets/:petId/memories', (req: Request, res: Response): void => {
+// 上传前中间件：异步查询 memory 的 pet_id，供 multer diskStorage 使用
+async function lookupMemoryPet(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const rows = db
-      .prepare('SELECT * FROM memories WHERE pet_id = ? ORDER BY memory_date DESC, created_at DESC')
-      .all(req.params.petId)
-    const memories = rows.map(parseMemory)
+    await ensureDB()
+    const result = await db.execute({
+      sql: 'SELECT pet_id FROM memories WHERE id = ?',
+      args: [req.params.id],
+    })
+    if (result.rows.length === 0) {
+      res.status(404).json({ success: false, error: 'Memory not found' })
+      return
+    }
+    ;(req as any).memoryPetId = result.rows[0].pet_id
+    next()
+  } catch (err) {
+    res.status(500).json({ success: false, error: (err as Error).message })
+  }
+}
+
+// GET /api/pets/:petId/memories - 获取某宠物的所有记忆
+router.get('/pets/:petId/memories', async (req: Request, res: Response): Promise<void> => {
+  try {
+    await ensureDB()
+    const result = await db.execute({
+      sql: 'SELECT * FROM memories WHERE pet_id = ? ORDER BY memory_date DESC, created_at DESC',
+      args: [req.params.petId],
+    })
+    const memories = result.rows.map(parseMemory)
     const response: ApiResponse<Memory[]> = { success: true, data: memories }
     res.json(response)
   } catch (err) {
@@ -85,30 +99,32 @@ router.get('/pets/:petId/memories', (req: Request, res: Response): void => {
 })
 
 // POST /api/pets/:petId/memories - 创建新记忆
-router.post('/pets/:petId/memories', (req: Request, res: Response): void => {
+router.post('/pets/:petId/memories', async (req: Request, res: Response): Promise<void> => {
   try {
+    await ensureDB()
     const { content, image_paths, memory_date, category } = req.body
     const petId = req.params.petId
-    const pet = db.prepare('SELECT id FROM pets WHERE id = ?').get(petId)
-    if (!pet) {
+    const petResult = await db.execute({ sql: 'SELECT id FROM pets WHERE id = ?', args: [petId] })
+    if (petResult.rows.length === 0) {
       res.status(404).json({ success: false, error: 'Pet not found' })
       return
     }
     const id = randomUUID()
-    db.prepare(
-      `INSERT INTO memories (id, pet_id, content, image_paths, memory_date, category)
+    await db.execute({
+      sql: `INSERT INTO memories (id, pet_id, content, image_paths, memory_date, category)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(
-      id,
-      petId,
-      content ?? '',
-      JSON.stringify(image_paths ?? []),
-      memory_date ?? null,
-      category ?? 'daily',
-    )
+      args: [
+        id,
+        petId,
+        content ?? '',
+        JSON.stringify(image_paths ?? []),
+        memory_date ?? null,
+        category ?? 'daily',
+      ],
+    })
 
-    const row = db.prepare('SELECT * FROM memories WHERE id = ?').get(id)
-    const response: ApiResponse<Memory> = { success: true, data: parseMemory(row) }
+    const result = await db.execute({ sql: 'SELECT * FROM memories WHERE id = ?', args: [id] })
+    const response: ApiResponse<Memory> = { success: true, data: parseMemory(result.rows[0]) }
     res.status(201).json(response)
   } catch (err) {
     res.status(500).json({ success: false, error: (err as Error).message })
@@ -116,28 +132,34 @@ router.post('/pets/:petId/memories', (req: Request, res: Response): void => {
 })
 
 // PUT /api/memories/:id - 更新记忆
-router.put('/memories/:id', (req: Request, res: Response): void => {
+router.put('/memories/:id', async (req: Request, res: Response): Promise<void> => {
   try {
+    await ensureDB()
     const { content, image_paths, memory_date, category } = req.body
-    const existing = db.prepare('SELECT * FROM memories WHERE id = ?').get(req.params.id) as any
-    if (!existing) {
+    const existingResult = await db.execute({
+      sql: 'SELECT * FROM memories WHERE id = ?',
+      args: [req.params.id],
+    })
+    if (existingResult.rows.length === 0) {
       res.status(404).json({ success: false, error: 'Memory not found' })
       return
     }
-    db.prepare(
-      `UPDATE memories
+    const existing = existingResult.rows[0] as any
+    await db.execute({
+      sql: `UPDATE memories
        SET content = ?, image_paths = ?, memory_date = ?, category = ?
        WHERE id = ?`,
-    ).run(
-      content ?? existing.content,
-      image_paths !== undefined ? JSON.stringify(image_paths) : existing.image_paths,
-      memory_date ?? existing.memory_date,
-      category ?? existing.category,
-      req.params.id,
-    )
+      args: [
+        content ?? existing.content,
+        image_paths !== undefined ? JSON.stringify(image_paths) : existing.image_paths,
+        memory_date ?? existing.memory_date,
+        category ?? existing.category,
+        req.params.id,
+      ],
+    })
 
-    const row = db.prepare('SELECT * FROM memories WHERE id = ?').get(req.params.id)
-    const response: ApiResponse<Memory> = { success: true, data: parseMemory(row) }
+    const result = await db.execute({ sql: 'SELECT * FROM memories WHERE id = ?', args: [req.params.id] })
+    const response: ApiResponse<Memory> = { success: true, data: parseMemory(result.rows[0]) }
     res.json(response)
   } catch (err) {
     res.status(500).json({ success: false, error: (err as Error).message })
@@ -145,10 +167,11 @@ router.put('/memories/:id', (req: Request, res: Response): void => {
 })
 
 // DELETE /api/memories/:id - 删除记忆
-router.delete('/memories/:id', (req: Request, res: Response): void => {
+router.delete('/memories/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = db.prepare('DELETE FROM memories WHERE id = ?').run(req.params.id)
-    if (result.changes === 0) {
+    await ensureDB()
+    const result = await db.execute({ sql: 'DELETE FROM memories WHERE id = ?', args: [req.params.id] })
+    if (result.rowsAffected === 0) {
       res.status(404).json({ success: false, error: 'Memory not found' })
       return
     }
@@ -160,27 +183,32 @@ router.delete('/memories/:id', (req: Request, res: Response): void => {
 })
 
 // POST /api/memories/:id/upload - 上传记忆照片
-router.post('/memories/:id/upload', upload.array('images', 10), (req: Request, res: Response): void => {
+router.post('/memories/:id/upload', lookupMemoryPet, upload.array('images', 10), async (req: Request, res: Response): Promise<void> => {
   try {
+    await ensureDB()
     const files = req.files as Express.Multer.File[]
     if (!files || files.length === 0) {
       res.status(400).json({ success: false, error: 'No files uploaded' })
       return
     }
-    const existing = db.prepare('SELECT * FROM memories WHERE id = ?').get(req.params.id) as any
-    if (!existing) {
+    const existingResult = await db.execute({
+      sql: 'SELECT * FROM memories WHERE id = ?',
+      args: [req.params.id],
+    })
+    if (existingResult.rows.length === 0) {
       res.status(404).json({ success: false, error: 'Memory not found' })
       return
     }
+    const existing = existingResult.rows[0] as any
     const newPaths = files.map(
       (f) => `/uploads/pets/${existing.pet_id}/memories/${f.filename}`,
     )
     const existingPaths: string[] = JSON.parse(existing.image_paths ?? '[]')
     const updatedPaths = [...existingPaths, ...newPaths]
-    db.prepare('UPDATE memories SET image_paths = ? WHERE id = ?').run(
-      JSON.stringify(updatedPaths),
-      req.params.id,
-    )
+    await db.execute({
+      sql: 'UPDATE memories SET image_paths = ? WHERE id = ?',
+      args: [JSON.stringify(updatedPaths), req.params.id],
+    })
     const response: ApiResponse<{ image_paths: string[] }> = {
       success: true,
       data: { image_paths: updatedPaths },
