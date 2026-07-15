@@ -49,7 +49,6 @@ export default function Planets() {
 
   const handleCreated = (pet: Pet) => {
     setPets((prev) => [pet, ...prev]);
-    setModalOpen(false);
   };
 
   return (

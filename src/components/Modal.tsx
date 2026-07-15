@@ -15,8 +15,12 @@ export default function Modal({ open, onClose, children, className = "" }: Modal
     if (open) {
       setShowModal(true);
       setIsClosing(false);
+    } else if (showModal && !isClosing) {
+      setIsClosing(true);
+      const timer = setTimeout(() => setShowModal(false), 300);
+      return () => clearTimeout(timer);
     }
-  }, [open]);
+  }, [open, showModal, isClosing]);
 
   const handleClose = useCallback(() => {
     setIsClosing(true);

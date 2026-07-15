@@ -458,3 +458,87 @@ input[type="date"]::-webkit-datetime-edit-text {
 .animate-modal-zoom-out {
   animation: modalZoomOut 0.3s ease-in forwards;
 }
+
+/* === 星球创建成功动效 === */
+
+/* 中心星球诞生 */
+@keyframes starBirth {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+  55% {
+    transform: scale(0.92);
+  }
+  75% {
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 光芒放射 */
+@keyframes lightRay {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--angle)) scaleY(0);
+  }
+  40% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--angle)) scaleY(1.8);
+  }
+}
+
+/* 粒子飞散 */
+@keyframes particleFly {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0.2);
+  }
+}
+
+/* 光晕扩散 */
+@keyframes haloExpand {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  40% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.8);
+  }
+}
+
+/* 成功文字浮现 */
+@keyframes successTextIn {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+    letter-spacing: 0.4em;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    letter-spacing: 0.12em;
+  }
+}

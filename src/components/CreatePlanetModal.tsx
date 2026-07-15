@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { X, Loader2, Sparkles } from "lucide-react";
 import { createPet } from "@/api/pets";
 import type { Pet, PlanetConfig } from "../../shared/types";
@@ -43,6 +43,27 @@ export default function CreatePlanetModal({
   const [hasRing, setHasRing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const successColorRef = useRef(color);
+
+  // 弹窗打开时重置成功状态
+  useEffect(() => {
+    if (open) {
+      setSuccess(false);
+      if (successTimerRef.current) {
+        clearTimeout(successTimerRef.current);
+        successTimerRef.current = null;
+      }
+    }
+  }, [open]);
+
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,6 +89,8 @@ export default function CreatePlanetModal({
         planet_config: planetConfig,
       });
       onCreated(pet);
+      successColorRef.current = color;
+      setSuccess(true);
       setName("");
       setSpecies("");
       setBirthDate("");
@@ -76,6 +99,10 @@ export default function CreatePlanetModal({
       setColor(colorPresets[0].value);
       setTexture("smooth");
       setHasRing(false);
+      successTimerRef.current = setTimeout(() => {
+        setSuccess(false);
+        onClose();
+      }, 2000);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -86,6 +113,87 @@ export default function CreatePlanetModal({
   return (
     <Modal open={open} onClose={onClose}>
       <div className="relative w-full max-w-2xl max-h-[95vh] rounded-3xl liquid-glass flex flex-col overflow-hidden">
+        {/* 创建成功动效 */}
+        {success && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-space-deepest/95 rounded-3xl">
+            {/* 扩散光晕 */}
+            <div
+              className="absolute w-28 h-28 rounded-full"
+              style={{
+                backgroundColor: successColorRef.current,
+                animation: "haloExpand 1.5s ease-out 0.2s forwards",
+              }}
+            />
+            <div
+              className="absolute w-28 h-28 rounded-full"
+              style={{
+                backgroundColor: successColorRef.current,
+                animation: "haloExpand 1.5s ease-out 0.55s forwards",
+              }}
+            />
+
+            {/* 中心星球 + 光芒 */}
+            <div className="relative w-28 h-28 flex items-center justify-center">
+              {/* 光芒射线 */}
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div
+                  key={`ray-${i}`}
+                  className="absolute bottom-1/2 left-1/2 -ml-[2px] w-1 h-16 bg-gradient-to-t from-transparent via-gold/60 to-transparent rounded-full"
+                  style={{
+                    "--angle": `${i * 45}deg`,
+                    transformOrigin: "center bottom",
+                    animation: `lightRay 1s ease-out ${0.15 + i * 0.02}s forwards`,
+                  } as React.CSSProperties}
+                />
+              ))}
+
+              {/* 中心星球 */}
+              <div
+                className="relative w-20 h-20 rounded-full"
+                style={{
+                  background: `radial-gradient(circle at 30% 30%, ${successColorRef.current}, ${successColorRef.current}99, ${successColorRef.current}66)`,
+                  boxShadow: `0 0 40px ${successColorRef.current}80, 0 0 80px ${successColorRef.current}40, inset 0 -8px 16px rgba(0,0,0,0.3)`,
+                  animation: "starBirth 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
+                }}
+              >
+                <div className="absolute inset-3 rounded-full bg-gradient-to-br from-white/40 to-transparent" />
+              </div>
+
+              {/* 粒子 */}
+              <div className="absolute inset-0 pointer-events-none">
+                {Array.from({ length: 12 }).map((_, i) => {
+                  const angle = (i * 30 * Math.PI) / 180;
+                  const dist = 55 + (i % 3) * 15;
+                  return (
+                    <div
+                      key={`p-${i}`}
+                      className="absolute top-1/2 left-1/2 w-1.5 h-1.5 rounded-full bg-gold-light"
+                      style={{
+                        "--tx": `${Math.cos(angle) * dist}px`,
+                        "--ty": `${Math.sin(angle) * dist}px`,
+                        animation: `particleFly 1.2s ease-out ${0.3 + i * 0.03}s forwards`,
+                      } as React.CSSProperties}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 文字 */}
+            <div
+              className="mt-10 text-center"
+              style={{ animation: "successTextIn 0.6s ease-out 0.65s forwards", opacity: 0 }}
+            >
+              <h2 className="font-serif text-2xl font-semibold text-gold mb-2">
+                星球已点亮
+              </h2>
+              <p className="text-sm text-ink-secondary">
+                TA 将永远在这片星空中闪耀
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* 关闭按钮 */}
         <button
           onClick={onClose}
